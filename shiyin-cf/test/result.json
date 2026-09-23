@@ -1,0 +1,35 @@
+{
+  "results": {
+    "solo": true,
+    "group": true,
+    "details": {
+      "solo": {
+        "room": "5E9AEW",
+        "macView": "live",
+        "iphoneView": "live",
+        "macTimer": "0:03",
+        "iphoneTimer": "0:03"
+      },
+      "group": {
+        "room": "GWNFR2",
+        "mac": {
+          "view": "glive",
+          "count": "3 / 4"
+        },
+        "iphone": {
+          "view": "glive",
+          "count": "3 / 4"
+        },
+        "xiaomi": {
+          "view": "glive",
+          "count": "3 / 4"
+        }
+      }
+    }
+  },
+  "consoleErrs": [
+    "Mac: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Mac: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "iPhone: Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}
