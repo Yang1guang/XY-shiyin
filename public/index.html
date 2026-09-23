@@ -476,11 +476,24 @@ h1,h2,h3,p{margin:0}
     if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(function () {});
     return Promise.resolve();
   }
-  function tryPlay(el) { if (!el) return; var p = el.play(); if (p && p.catch) p.catch(function () {}); }
+  function tryPlay(el) {
+    if (!el) return;
+    var p = el.play();
+    if (p && p.catch) p.catch(function () {
+      // 被浏览器 autoplay 策略拦截时，首次用户手势再重试播放（修复“听不到对方”）
+      var retry = function () { try { el.play(); } catch (e) {} };
+      document.addEventListener("click", retry, { once: true });
+      document.addEventListener("touchstart", retry, { once: true });
+    });
+  }
   function initAudioCtx() {
     try {
       if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
       if (_ctx.state === "suspended") _ctx.resume();
+      // 静默 buffer 解锁音频输出（绕过移动端/无手势时的 autoplay 限制）
+      var b = _ctx.createBuffer(1, 1, 22050);
+      var s = _ctx.createBufferSource();
+      s.buffer = b; s.connect(_ctx.destination); s.start(0);
     } catch (e) {}
   }
 
@@ -614,11 +627,25 @@ h1,h2,h3,p{margin:0}
       st.localStream.getTracks().forEach(function (t) { try { pc.addTrack(t, st.localStream); } catch (e) {} });
     }
     pc.onicecandidate = function (e) { if (e.candidate) sendSig(pid, { candidate: e.candidate }); };
-    pc.ontrack = function (e) { attachRemote(pid, e.streams[0]); };
+    pc.ontrack = function (e) {
+      // 部分浏览器 e.streams 可能为空，兜底用 track 组流，避免该侧静音（单向音频）
+      if (e.streams && e.streams[0]) attachRemote(pid, e.streams[0]);
+      else attachRemote(pid, new MediaStream([e.track]));
+    };
     pc.onconnectionstatechange = function () {
       var s = pc.connectionState;
-      if (s === "connected") onPeerConnected(pid);
-      else if (s === "failed" || s === "disconnected" || s === "closed") onPeerDropped(pid);
+      if (s === "connected") { clearTimeout(pc.__dropTimer); onPeerConnected(pid); }
+      else if (s === "failed") { onPeerDropped(pid); }
+      else if (s === "closed") { /* 自身关闭，不重复处理 */ }
+      else if (s === "disconnected") {
+        // 短暂抖动给 5 秒宽限并优先 ICE 重启，避免单侧拆连接 → 单向音频
+        clearTimeout(pc.__dropTimer);
+        pc.__dropTimer = setTimeout(function () {
+          var now = pc.connectionState;
+          if (now === "disconnected") { if (pc.restartIce) { try { pc.restartIce(); } catch (e) {} } }
+          else if (now === "failed") { onPeerDropped(pid); }
+        }, 5000);
+      }
     };
     if (st.selfId && st.selfId < pid) {
       pc.createOffer().then(function (o) { return pc.setLocalDescription(o); })
@@ -748,10 +775,10 @@ h1,h2,h3,p{margin:0}
       var c = $("countdown"); if (c) c.textContent = st.reconnectLeft;
       if (st.reconnectLeft <= 0) { clearInterval(st.reconnectId); onCallEnded(); }
     }, 1000);
-    if (st.mode === "solo" && st.soloPeerId && st.ws && st.ws.readyState === 1) {
-      var pid = st.soloPeerId;
-      teardownPeer(pid);
-      setTimeout(function () { ensurePeerName(pid); setupPeer(pid); }, 800);
+    // 优先复用现有连接做 ICE 重启，避免单侧拆除导致单向音频 / 协商不对称
+    if (st.mode === "solo" && st.soloPeerId) {
+      var pc = st.pcs[st.soloPeerId];
+      if (pc) { if (pc.restartIce) { try { pc.restartIce(); } catch (e) {} } }
     }
   }
 
